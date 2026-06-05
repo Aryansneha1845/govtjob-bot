@@ -12,8 +12,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Safe string construction to prevent markdown copy-paste link corruption
+protocol = "https://"
+gemini_domain = "generativelanguage.googleapis.com"
+gemini_endpoint = "/v1beta/models/gemini-2.5-flash:generateContent?key="
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+GEMINI_URL = f"{protocol}{gemini_domain}{gemini_endpoint}{GEMINI_API_KEY}"
 
 def extract_job_details(title_or_context: str, url: str) -> dict:
     """Fetch job page via Jina AI and extract details using Gemini with dynamic backoff."""
@@ -22,7 +27,7 @@ def extract_job_details(title_or_context: str, url: str) -> dict:
     sanitized_url = _sanitize_url(url)
     page_text = _fetch_page(sanitized_url)
     
-    # 📉 Reduced to 2000 characters to safeguard Gemini Free-Tier TPM limits and prevent 429 errors
+    # Reduced to 2000 characters to safeguard Gemini Free-Tier TPM limits and prevent 429 errors
     context_data = page_text[:2000] if page_text else "No explicit page text content found."
 
     prompt = f"""
@@ -76,6 +81,8 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
 """
 
     clean_raw_title = str(title_or_context).split('|')[0].replace("Title:", "").strip()
+    
+    fallback_upsc = "https://" + "upsc.gov.in"
     fallback_data = {
         "job_title": clean_raw_title if len(clean_raw_title) > 5 else "Government Recruitment Alert",
         "organization": "Central / State Department",
@@ -89,14 +96,14 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
         "start_date": "Available Now",
         "last_date": "Click Official Link",
         "exam_date": "To be notified",
-        "official_apply_link": sanitized_url if sanitized_url else "https://upsc.gov.in",
+        "official_apply_link": sanitized_url if sanitized_url else fallback_upsc,
         "selection_process": "Written Test / Interview",
         "job_type": "Permanent",
         "location": "All India"
     }
 
     max_retries = 3
-    backoff_delay = 15  # Halved context allows faster dynamic token reset
+    backoff_delay = 15
 
     for attempt in range(max_retries):
         try:
@@ -156,17 +163,19 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
 
 
 def _sanitize_url(url: str) -> str:
-    """Helper to rip out any markdown format artifacts from the URL string safely."""
+    """Helper to rip out any markdown format artifacts or brackets from the URL string safely."""
     if not url:
         return ""
-    raw_str = str(url).strip()
     
-    # Extract clean absolute http/https link using regex to discard markdown wrappers
-    found_urls = re.findall(r'https?://[^\s\)\],]+', raw_str)
+    # Direct absolute hard scrub against markdown bracket artifacts
+    clean = str(url).strip()
+    clean = re.sub(r'[\[\]\(\)]', '', clean)
+    
+    # Extract clean absolute http/https link using regex
+    found_urls = re.findall(r'https?://[^\s,]+', clean)
     if found_urls:
-        final_url = found_urls[-1]
-        return final_url.rstrip(']').rstrip(')').rstrip('[')
-    return raw_str
+        return found_urls[-1]
+    return clean
 
 
 def _fetch_page(url: str) -> str:
@@ -176,19 +185,24 @@ def _fetch_page(url: str) -> str:
     try:
         clean_target = _sanitize_url(url)
         
-        # Deduplicate Jina proxy framing if already existing
+        # Hard code connection strings separately to prevent IDE/Browser copy-paste markdown wrapping
+        p1 = "https://"
+        p2 = "r.jina.ai/"
+        jina_prefix = p1 + p2
+        
         if "r.jina.ai" in clean_target:
-            if "[https://r.jina.ai/](https://r.jina.ai/)" in clean_target:
-                jina_url = clean_target
-            else:
-                jina_url = f"https://{clean_target}"
+            jina_url = clean_target
         else:
-            jina_url = f"[https://r.jina.ai/](https://r.jina.ai/){clean_target}"
+            jina_url = f"{jina_prefix}{clean_target}"
             
         headers = {
             "Accept": "text/plain",
             "X-No-Cache": "true"
         }
+        
+        # Final safety scrub to make sure no brackets exist in the final request URL
+        jina_url = re.sub(r'[\[\]\(\)]', '', jina_url)
+        
         resp = requests.get(jina_url, headers=headers, timeout=20)
         if resp.status_code == 200:
             print(f"✅ Jina fetch success for: {clean_target}")
