@@ -51,7 +51,7 @@ class TelegramPoster:
             payload = {
                 "chat_id": self.channel_id,
                 "text": caption,
-                "parse_mode": "HTML",  # 🔥 Using HTML instead of Markdown to prevent character crashes
+                "parse_mode": "HTML",  # 🔥 HTML mode prevents special character crashes
                 "reply_markup": json.dumps(inline_keyboard),
                 "disable_web_page_preview": False
             }
