@@ -205,12 +205,15 @@ def check_and_post():
                     else:
                         log.error(f"❌ FAILED! Telegram API rejected the post.")
 
-                    time.sleep(25)
+                    # 💤 Safe window delay: Dynamic gap badha kar 30 seconds kar diya hai
+                    # Taaki agar consecutive links aayein, toh pichli heavy PDF ka TPM volume cooldown ho jaye.
+                    log.info("🏁 Job transaction finished. Sleeping 30 seconds to safeguard tokens basket...")
+                    time.sleep(30)
 
         except Exception as e:
             log.error(f"💥 CRITICAL PIPELINE FAILURE in {source}: {e}")
 
-    log.info("🏁 All channels checked. Entering sleep state.")
+    log.info("🏁 All channels checked successfully. Entering sleep state.")
 
 
 def main():
