@@ -1,7 +1,6 @@
 """
 Uses Google Gemini API to extract job details from notification pages.
-Extracts fields strictly mapped with bot.py placeholders.
-Forces exact numeric salary ranges, qualifications, and mandatory experience requirements.
+Uses Jina AI for free web page fetching — no blocks on government sites.
 """
 
 import re 
@@ -17,7 +16,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
 def extract_job_details(title_or_context: str, url: str) -> dict:
-    """Fetch job page and extract pin-point accurate details using Gemini."""
+    """Fetch job page via Jina AI and extract details using Gemini."""
     
     page_text = _fetch_page(url)
     context_data = page_text[:4000] if page_text else "No explicit page text content found."
@@ -93,7 +92,7 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
     }
 
     max_retries = 3
-    backoff_delay = 15  # Increased to avoid 429 rate limits
+    backoff_delay = 15
 
     for attempt in range(max_retries):
         try:
@@ -111,7 +110,7 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             if resp.status_code == 429:
                 print(f"⏳ Rate Limit (429) Hit! Attempt {attempt+1}/{max_retries}. Sleeping {backoff_delay}s...")
                 time.sleep(backoff_delay)
-                backoff_delay *= 2  # 15s → 30s → 60s
+                backoff_delay *= 2
                 continue
                 
             if not resp.ok:
@@ -143,36 +142,22 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
 
 
 def _fetch_page(url: str) -> str:
-    """Fetch webpage text content safely with anti-bot bypass headers."""
+    """Fetch page content via Jina AI — works on government sites without blocks."""
     if not url or url == "#" or "javascript" in url.lower():
         return ""
     try:
+        # Jina AI reader — free, no API key, no blocks
+        jina_url = f"https://r.jina.ai/{url}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
+            "Accept": "text/plain",
+            "X-No-Cache": "true"
         }
-        
-        session = requests.Session()
-        resp = session.get(url, headers=headers, timeout=15, allow_redirects=True)
-        
-        if resp.status_code != 200:
-            print(f"⚠️ Portal blocked. Status: {resp.status_code}")
-            return ""
-        
-        from bs4 import BeautifulSoup
-        resp.encoding = resp.apparent_encoding
-        soup = BeautifulSoup(resp.text, "html.parser")
-        
-        for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "meta", "link"]):
-            tag.decompose()
-        
-        clean_text = re.sub(r'\s+', ' ', soup.get_text(separator=" ", strip=True))
-        return clean_text
-        
+        resp = requests.get(jina_url, headers=headers, timeout=20)
+        if resp.status_code == 200:
+            print(f"✅ Jina fetch success for: {url}")
+            return resp.text[:4000]
+        print(f"⚠️ Jina fetch failed. Status: {resp.status_code}")
+        return ""
     except Exception as e:
-        print(f"💥 Portal scraping exception: {e}")
+        print(f"💥 Jina fetch exception: {e}")
         return ""
