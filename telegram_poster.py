@@ -74,7 +74,3 @@ class TelegramPoster:
         if not text:
             return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-```
-eof
-
----
