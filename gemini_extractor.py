@@ -3,7 +3,6 @@ Uses Google Gemini API to extract job details from notification pages.
 Uses Jina AI for free web page fetching — no blocks on government sites.
 """
 
-import re 
 import os
 import json
 import requests
@@ -12,6 +11,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Safe retrieval of Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 # 🚀 Upgraded to gemini-2.5-flash for superior heavy text and data compliance
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
@@ -122,18 +122,56 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             data = resp.json()
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            # 🔥 Smart Cleaning: Extract valid JSON structure even if Gemini wraps it in markdown backticks
-            clean_text = raw_text
+            # 🔥 Pure Python String Slicing (Saves syntax from breaking)
+            clean_text = raw_text.strip()
             if clean_text.startswith("```"):
-                clean_text = re.sub(r'^
-http://googleusercontent.com/immersive_entry_chip/0
+                if clean_text.startswith("```json"):
+                    clean_text = clean_text[7:]
+                else:
+                    clean_text = clean_text[3:]
+                
+                if clean_text.endswith("```"):
+                    clean_text = clean_text[:-3]
+            
+            clean_text = clean_text.strip()
+            parsed_json = json.loads(clean_text)
+            
+            # Force original URL if Gemini gives wrong/generic link
+            invalid_links = ["", "#", "[https://upsc.gov.in](https://upsc.gov.in)", "[https://ssc.gov.in](https://ssc.gov.in)", "[https://upsconline.gov.in](https://upsconline.gov.in)"]
+            if not parsed_json.get("official_apply_link") or parsed_json.get("official_apply_link", "").strip() in invalid_links:
+                parsed_json["official_apply_link"] = url
+                
+            return parsed_json
+        
+        except json.JSONDecodeError:
+            print("💥 JSON parsing failed due to string format corruption. Serving fallback structures.")
+            return fallback_data
+        except Exception as e:
+            print(f"💥 Attempt {attempt+1} failed with exception: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
 
-### 🛠️ Is Badlaav se Kya Fayda Hoga:
-1. **No More Fallback Data:** Ab agar model galti se markdown wrapper lagayega, toh hamara custom cleaning filter regex use strip kar dega aur `json.loads` real data ko load karega bina crash hue.
-2. **`[skip ci]` Integration:** Yeh file direct production mein push hone ke baad Railway loop ko bypass rakhegi jab tak bot automatic execution cycle chala raha hai.
+    print("🚨 All Gemini retries exhausted due to rate limits. Serving fallback data structures.")
+    fallback_data["official_apply_link"] = url
+    return fallback_data
 
-Is file ko save karo aur final code commit push kar do bhai:
-```powershell
-git add .
-git commit -m "Fix: Add robust regex JSON sanitizer to extractor module [skip ci]"
-git push origin main
+
+def _fetch_page(url: str) -> str:
+    """Fetch page content via Jina AI — works on government sites without blocks."""
+    if not url or url == "#" or "javascript" in url.lower():
+        return ""
+    try:
+        jina_url = f"[https://r.jina.ai/](https://r.jina.ai/){url}"
+        headers = {
+            "Accept": "text/plain",
+            "X-No-Cache": "true"
+        }
+        resp = requests.get(jina_url, headers=headers, timeout=20)
+        if resp.status_code == 200:
+            print(f"✅ Jina fetch success for: {url}")
+            return resp.text[:4000]
+        print(f"⚠️ Jina fetch failed. Status: {resp.status_code}")
+        return ""
+    except Exception as e:
+        print(f"💥 Jina fetch exception: {e}")
+        return ""
