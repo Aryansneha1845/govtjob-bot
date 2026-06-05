@@ -44,7 +44,7 @@ SCRAPERS = {
 
 
 def commit_page_to_github(file_path: str, html_content: str):
-    """Automatically commits generated HTML page to GitHub repo."""
+    """Automatically commits generated HTML page to GitHub repo with CI bypass."""
     try:
         if not GITHUB_TOKEN or not GITHUB_REPO:
             log.warning("⚠️ GitHub token or repo not set — skipping commit.")
@@ -62,8 +62,9 @@ def commit_page_to_github(file_path: str, html_content: str):
 
         content_b64 = base64.b64encode(html_content.encode("utf-8")).decode("utf-8")
 
+        # 🔥 Adding [skip ci] tag explicitly tells Railway to NOT trigger an automatic build
         payload = {
-            "message": f"Auto: Add job page {file_path}",
+            "message": f"Auto: Add job page {file_path} [skip ci]",
             "content": content_b64,
         }
         if sha:
@@ -71,7 +72,7 @@ def commit_page_to_github(file_path: str, html_content: str):
 
         resp = requests.put(api_url, json=payload, headers=headers)
         if resp.ok:
-            log.info(f"✅ GitHub commit success: {file_path}")
+            log.info(f"✅ GitHub commit success (Build Skipped): {file_path}")
         else:
             log.error(f"❌ GitHub commit failed: {resp.text}")
 
@@ -205,8 +206,7 @@ def check_and_post():
                     else:
                         log.error(f"❌ FAILED! Telegram API rejected the post.")
 
-                    # 💤 Safe window delay: Dynamic gap badha kar 30 seconds kar diya hai
-                    # Taaki agar consecutive links aayein, toh pichli heavy PDF ka TPM volume cooldown ho jaye.
+                    # 💤 Safe window delay
                     log.info("🏁 Job transaction finished. Sleeping 30 seconds to safeguard tokens basket...")
                     time.sleep(30)
 
