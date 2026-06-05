@@ -205,7 +205,7 @@ def check_and_post():
                     else:
                         log.error(f"❌ FAILED! Telegram API rejected the post.")
 
-                    time.sleep(6)
+                    time.sleep(25)
 
         except Exception as e:
             log.error(f"💥 CRITICAL PIPELINE FAILURE in {source}: {e}")
