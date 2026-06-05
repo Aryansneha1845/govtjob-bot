@@ -8,7 +8,7 @@ class TelegramPoster:
     def __init__(self, token, channel_id):
         self.token = token
         self.channel_id = channel_id
-        self.api_url = f"https://api.telegram.org/bot{token}"
+        self.api_url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){token}"
 
     def post(self, job_data):
         """
@@ -24,7 +24,7 @@ class TelegramPoster:
         title = self.clean_html(job_data.get('job_title', 'New Notification Alert'))
         vacancies = self.clean_html(job_data.get('total_vacancies', 'Check Official Link'))
         last_date = self.clean_html(job_data.get('last_date', 'Apply Soon'))
-        detailed_url = job_data.get('detailed_page_url', 'https://deshnaukri.netlify.app')
+        detailed_url = job_data.get('detailed_page_url', '[https://deshnaukri.netlify.app](https://deshnaukri.netlify.app)')
 
         # 🎯 High engagement HTML captioned format
         caption = (
@@ -51,7 +51,7 @@ class TelegramPoster:
             payload = {
                 "chat_id": self.channel_id,
                 "text": caption,
-                "parse_mode": "HTML",  # 🔥 HTML mode prevents special character crashes
+                "parse_mode": "HTML",
                 "reply_markup": json.dumps(inline_keyboard),
                 "disable_web_page_preview": False
             }
