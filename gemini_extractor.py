@@ -13,10 +13,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_API_KEY}"
+# 🚀 Upgraded to gemini-2.5-flash for superior heavy text and data compliance
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 def extract_job_details(title_or_context: str, url: str) -> dict:
-    """Fetch job page via Jina AI and extract details using Gemini."""
+    """Fetch job page via Jina AI and extract details using Gemini with dynamic backoff."""
     
     page_text = _fetch_page(url)
     context_data = page_text[:4000] if page_text else "No explicit page text content found."
@@ -92,7 +93,8 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
     }
 
     max_retries = 3
-    backoff_delay = 15
+    # 🏁 Set initial backoff delay to 65 seconds to guarantee Google TPM bucket reset
+    backoff_delay = 65
 
     for attempt in range(max_retries):
         try:
@@ -108,9 +110,9 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             resp = requests.post(GEMINI_URL, json=payload, timeout=25)
             
             if resp.status_code == 429:
-                print(f"⏳ Rate Limit (429) Hit! Attempt {attempt+1}/{max_retries}. Sleeping {backoff_delay}s...")
+                print(f"⏳ Rate Limit (429) Hit! Attempt {attempt+1}/{max_retries}. Heavy context payload detected. Sleeping {backoff_delay}s for token bucket reset...")
                 time.sleep(backoff_delay)
-                backoff_delay *= 2
+                backoff_delay *= 2  # Exponential shift if multi-hits occur
                 continue
                 
             if not resp.ok:
@@ -132,11 +134,11 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             print("💥 JSON parsing failed. Serving fallback.")
             return fallback_data
         except Exception as e:
-            print(f"💥 Attempt {attempt+1} failed: {e}")
+            print(f"💥 Attempt {attempt+1} failed with exception: {e}")
             if attempt < max_retries - 1:
                 time.sleep(5)
 
-    print("🚨 All Gemini retries exhausted. Serving fallback.")
+    print("🚨 All Gemini retries exhausted due to rate limits. Serving fallback data structures.")
     fallback_data["official_apply_link"] = url
     return fallback_data
 
@@ -146,7 +148,6 @@ def _fetch_page(url: str) -> str:
     if not url or url == "#" or "javascript" in url.lower():
         return ""
     try:
-        # Jina AI reader — free, no API key, no blocks
         jina_url = f"https://r.jina.ai/{url}"
         headers = {
             "Accept": "text/plain",
