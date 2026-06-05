@@ -7,20 +7,23 @@ import os
 import json
 import requests
 import time
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Safe retrieval of Environment Variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-# 🚀 Upgraded to gemini-2.5-flash for superior heavy text and data compliance
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 def extract_job_details(title_or_context: str, url: str) -> dict:
     """Fetch job page via Jina AI and extract details using Gemini with dynamic backoff."""
     
-    page_text = _fetch_page(url)
-    context_data = page_text[:4000] if page_text else "No explicit page text content found."
+    # Clean the incoming target URL first
+    sanitized_url = _sanitize_url(url)
+    page_text = _fetch_page(sanitized_url)
+    
+    # 📉 Reduced to 2000 characters to safeguard Gemini Free-Tier TPM limits and prevent 429 errors
+    context_data = page_text[:2000] if page_text else "No explicit page text content found."
 
     prompt = f"""
 You are an expert Indian Government Job Recruitment Analyst. Your absolute priority is to provide EXACT NUMERIC DIGITS, specific qualifications, and clear experience details.
@@ -45,7 +48,7 @@ Instructions:
 - start_date: Application start date if mentioned.
 - last_date: Last date to apply in DD Month YYYY format.
 - exam_date: Exam date if mentioned.
-- official_apply_link: Direct apply link. If not found, use: {url}
+- official_apply_link: Direct apply link. If not found, use: {sanitized_url}
 - selection_process: e.g. Written Test, Physical Test, Interview
 - job_type: Permanent / Contractual / Temporary
 - location: Job location or All India
@@ -86,15 +89,14 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
         "start_date": "Available Now",
         "last_date": "Click Official Link",
         "exam_date": "To be notified",
-        "official_apply_link": url if url and url != "#" else "https://upsc.gov.in",
+        "official_apply_link": sanitized_url if sanitized_url else "https://upsc.gov.in",
         "selection_process": "Written Test / Interview",
         "job_type": "Permanent",
         "location": "All India"
     }
 
     max_retries = 3
-    # 🏁 Set initial backoff delay to 65 seconds to guarantee Google TPM bucket reset
-    backoff_delay = 65
+    backoff_delay = 15  # Halved context allows faster dynamic token reset
 
     for attempt in range(max_retries):
         try:
@@ -102,7 +104,7 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
                     "temperature": 0.1,
-                    "maxOutputTokens": 1000,
+                    "maxOutputTokens": 800,
                     "responseMimeType": "application/json"
                 }
             }
@@ -110,9 +112,9 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             resp = requests.post(GEMINI_URL, json=payload, timeout=25)
             
             if resp.status_code == 429:
-                print(f"⏳ Rate Limit (429) Hit! Attempt {attempt+1}/{max_retries}. Heavy context payload detected. Sleeping {backoff_delay}s for token bucket reset...")
+                print(f"⏳ Rate Limit (429) Hit! Attempt {attempt+1}/{max_retries}. Sleeping {backoff_delay}s...")
                 time.sleep(backoff_delay)
-                backoff_delay *= 2  # Exponential shift if multi-hits occur
+                backoff_delay *= 2
                 continue
                 
             if not resp.ok:
@@ -122,7 +124,6 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             data = resp.json()
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             
-            # 🔥 Pure Python String Slicing (Saves syntax from breaking)
             clean_text = raw_text.strip()
             if clean_text.startswith("```"):
                 if clean_text.startswith("```json"):
@@ -136,40 +137,62 @@ Provide STRICTLY in this JSON format. No markdown, no backticks, just raw JSON:
             clean_text = clean_text.strip()
             parsed_json = json.loads(clean_text)
             
-            # Force original URL if Gemini gives wrong/generic link
             invalid_links = ["", "#", "[https://upsc.gov.in](https://upsc.gov.in)", "[https://ssc.gov.in](https://ssc.gov.in)", "[https://upsconline.gov.in](https://upsconline.gov.in)"]
             if not parsed_json.get("official_apply_link") or parsed_json.get("official_apply_link", "").strip() in invalid_links:
-                parsed_json["official_apply_link"] = url
+                parsed_json["official_apply_link"] = sanitized_url
                 
             return parsed_json
         
         except json.JSONDecodeError:
-            print("💥 JSON parsing failed due to string format corruption. Serving fallback structures.")
+            print("💥 JSON parsing failed due to format corruption. Serving fallback.")
             return fallback_data
         except Exception as e:
             print(f"💥 Attempt {attempt+1} failed with exception: {e}")
             if attempt < max_retries - 1:
                 time.sleep(5)
 
-    print("🚨 All Gemini retries exhausted due to rate limits. Serving fallback data structures.")
-    fallback_data["official_apply_link"] = url
+    fallback_data["official_apply_link"] = sanitized_url
     return fallback_data
 
 
+def _sanitize_url(url: str) -> str:
+    """Helper to rip out any markdown format artifacts from the URL string safely."""
+    if not url:
+        return ""
+    raw_str = str(url).strip()
+    
+    # Extract clean absolute http/https link using regex to discard markdown wrappers
+    found_urls = re.findall(r'https?://[^\s\)\],]+', raw_str)
+    if found_urls:
+        final_url = found_urls[-1]
+        return final_url.rstrip(']').rstrip(')').rstrip('[')
+    return raw_str
+
+
 def _fetch_page(url: str) -> str:
-    """Fetch page content via Jina AI — works on government sites without blocks."""
+    """Fetch page content via Jina AI safely without markdown clutter."""
     if not url or url == "#" or "javascript" in url.lower():
         return ""
     try:
-        jina_url = f"[https://r.jina.ai/](https://r.jina.ai/){url}"
+        clean_target = _sanitize_url(url)
+        
+        # Deduplicate Jina proxy framing if already existing
+        if "r.jina.ai" in clean_target:
+            if "[https://r.jina.ai/](https://r.jina.ai/)" in clean_target:
+                jina_url = clean_target
+            else:
+                jina_url = f"https://{clean_target}"
+        else:
+            jina_url = f"[https://r.jina.ai/](https://r.jina.ai/){clean_target}"
+            
         headers = {
             "Accept": "text/plain",
             "X-No-Cache": "true"
         }
         resp = requests.get(jina_url, headers=headers, timeout=20)
         if resp.status_code == 200:
-            print(f"✅ Jina fetch success for: {url}")
-            return resp.text[:4000]
+            print(f"✅ Jina fetch success for: {clean_target}")
+            return resp.text
         print(f"⚠️ Jina fetch failed. Status: {resp.status_code}")
         return ""
     except Exception as e:
