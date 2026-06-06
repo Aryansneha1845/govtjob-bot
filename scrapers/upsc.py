@@ -24,7 +24,10 @@ SKIP_WORDS = [
     "result", "admit card", "answer key", "syllabus",
     "cut off", "merit list", "official website",
     "exam date", "exam calendar", "pmt", "schedule",
-    "document verification", "interview date"
+    "document verification", "interview date",
+    "about us", "debarred", "recruitment rules",
+    "recruitment test", "status of", "kept on hold",
+    "free coaching", "social audit", "rojgar mela"
 ]
 
 
