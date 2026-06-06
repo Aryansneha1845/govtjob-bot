@@ -13,7 +13,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.makedirs(os.path.join(BASE_DIR, "logs"), exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
 
-OUTPUT_JOBS_DIR = os.path.join(BASE_DIR, "public_html", "jobs")
+OUTPUT_JOBS_DIR = os.path.join(BASE_DIR, "jobs")
 os.makedirs(OUTPUT_JOBS_DIR, exist_ok=True)
 
 logging.basicConfig(
@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
 CHANNEL_ID   = os.getenv("TELEGRAM_CHANNEL_ID", "")
-SITE_DOMAIN  = os.getenv("SITE_DOMAIN", "https://deshnaukri.netlify.app").rstrip("/")
+SITE_DOMAIN  = os.getenv("SITE_DOMAIN", "https://aryansneha1845.github.io/govtjob-bot").rstrip("/")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO  = os.getenv("GITHUB_REPO", "")
 
@@ -42,7 +42,6 @@ SCRAPERS = {
     "RRB":  scrape_rrb,
 }
 
-# 🚨 Junk words — in titles/URLs wale links skip ho jayenge
 JUNK_WORDS = [
     "marksheet", "mark-sheet", "result_system",
     "written-result", "marksheet_system",
@@ -116,7 +115,8 @@ def create_detailed_job_page(job_data):
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        commit_page_to_github(f"public_html/jobs/{file_name}", html_content)
+        # GitHub Pages ke liye jobs/ folder mein commit karo
+        commit_page_to_github(f"jobs/{file_name}", html_content)
 
         full_url = f"{SITE_DOMAIN}/jobs/{file_name}"
         log.info(f"📂 HTML Page Saved: {output_file_path}")
@@ -147,14 +147,12 @@ def check_and_post():
                     raw_title_lower = str(job.get("title", "")).lower()
                     raw_url_lower   = str(job.get("url", "")).lower()
 
-                    # 🚨 Junk filter
                     is_junk = any(w in raw_title_lower or w in raw_url_lower for w in JUNK_WORDS)
                     if is_junk:
                         log.warning(f"⚠️ Junk link skipped: {job['title'][:40]}")
                         db.save(job)
                         continue
 
-                    # 🧠 AI extraction
                     log.info("🧠 Requesting AI to parse details...")
                     context = f"Title: {job['title']} | URL: {job['url']}"
                     details = extract_job_details(context, job["url"])
@@ -167,7 +165,6 @@ def check_and_post():
 
                     parsed_title_lower = str(job.get("job_title", "")).lower()
 
-                    # Menu/structural link filter
                     is_menu = any(mk in raw_title_lower for mk in [
                         "active examination", "forthcoming", "recruitment requisition"
                     ])
@@ -182,14 +179,12 @@ def check_and_post():
 
                     log.info(f"✅ Extracted Title: {job.get('job_title')}")
 
-                    # HTML page generate + GitHub commit
                     web_url = create_detailed_job_page(job)
                     if web_url:
                         job["detailed_page_url"] = web_url
 
                     db.save(job)
 
-                    # Telegram post
                     log.info("📤 Posting to Telegram...")
                     success = poster.post(job)
                     if success:
