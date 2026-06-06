@@ -15,7 +15,7 @@ load_dotenv()
 # Safe string construction to prevent markdown copy-paste link corruption
 protocol = "https://"
 gemini_domain = "generativelanguage.googleapis.com"
-gemini_endpoint = "/v1beta/models/gemini-2.5-flash:generateContent?key="
+gemini_endpoint = "/v1beta/models/gemini-2.0-flash-lite:generateContent?key="
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_URL = f"{protocol}{gemini_domain}{gemini_endpoint}{GEMINI_API_KEY}"
