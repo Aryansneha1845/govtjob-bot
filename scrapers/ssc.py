@@ -10,8 +10,8 @@ JINA_PREFIX = "https://r.jina.ai/"
 HEADERS = {"Accept": "text/plain", "X-No-Cache": "true"}
 
 URLS = [
+    "https://www.indgovtjobs.in/search/label/SSC",
     "https://ssc.gov.in/portal/latestNews",
-    "https://www.sarkariresult.com/latestjob/ssc/",
 ]
 
 KEYWORDS = ["cgl", "chsl", "gd", "mts", "cpo", "steno", "je", "recruitment",
