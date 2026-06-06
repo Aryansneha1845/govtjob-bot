@@ -25,7 +25,7 @@ def scrape_ssc() -> list:
     # Pehle Jina se ssc.gov.in try karo
     for url in URLS:
         try:
-            if "ssc.gov.in" in url:
+            if "ssc.gov.in" not in url or True:
                 resp = requests.get(f"{JINA_PREFIX}{url}", headers=HEADERS, timeout=20)
                 if resp.status_code == 200 and len(resp.text) > 500:
                     jobs = _parse_text(resp.text, url)
