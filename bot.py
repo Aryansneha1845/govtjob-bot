@@ -23,9 +23,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-BOT_TOKEN  = os.getenv("TELEGRAM_BOT_TOKEN", "")
-CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
-SITE_DOMAIN = os.getenv("SITE_DOMAIN", "https://deshnaukri.netlify.app").rstrip("/")
+BOT_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
+CHANNEL_ID   = os.getenv("TELEGRAM_CHANNEL_ID", "")
+SITE_DOMAIN  = os.getenv("SITE_DOMAIN", "https://deshnaukri.netlify.app").rstrip("/")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO  = os.getenv("GITHUB_REPO", "")
 
@@ -42,96 +42,87 @@ SCRAPERS = {
     "RRB":  scrape_rrb,
 }
 
+# 🚨 Junk words — in titles/URLs wale links skip ho jayenge
+JUNK_WORDS = [
+    "marksheet", "mark-sheet", "result_system", "archives",
+    "written-result", "marksheet_system", "exam/marksheet",
+    "official website", "board exams", "all board",
+    "sarkariresult", "rojgarresult", "admit card", "answer key",
+    "syllabus", "old paper", "previous paper"
+]
+
 
 def commit_page_to_github(file_path: str, html_content: str):
-    """Automatically commits generated HTML page to GitHub repo with CI bypass."""
     try:
         if not GITHUB_TOKEN or not GITHUB_REPO:
-            log.warning("⚠️ GitHub token or repo not set — skipping commit.")
             return
-
         api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path}"
         headers = {
             "Authorization": f"token {GITHUB_TOKEN}",
             "Accept": "application/vnd.github.v3+json"
         }
-
-        # Check if file already exists (need SHA for update)
         get_resp = requests.get(api_url, headers=headers)
         sha = get_resp.json().get("sha") if get_resp.ok else None
-
         content_b64 = base64.b64encode(html_content.encode("utf-8")).decode("utf-8")
-
-        # 🔥 Adding [skip ci] tag explicitly tells Railway to NOT trigger an automatic build
         payload = {
             "message": f"Auto: Add job page {file_path} [skip ci]",
             "content": content_b64,
         }
         if sha:
             payload["sha"] = sha
-
         resp = requests.put(api_url, json=payload, headers=headers)
         if resp.ok:
-            log.info(f"✅ GitHub commit success (Build Skipped): {file_path}")
+            log.info(f"✅ GitHub commit success: {file_path}")
         else:
             log.error(f"❌ GitHub commit failed: {resp.text}")
-
     except Exception as e:
         log.error(f"❌ GitHub commit error: {e}")
 
 
 def create_detailed_job_page(job_data):
-    """
-    Website page template ke placeholders ko dynamically fill karta hai.
-    Auto commits to GitHub so Netlify publishes it automatically.
-    """
     try:
         template_path = os.path.join(BASE_DIR, "templates", "job_template.html")
         if not os.path.exists(template_path):
-            log.warning(f"⚠️ Template file missing at: {template_path}!")
+            log.warning(f"⚠️ Template missing: {template_path}")
             return None
 
         with open(template_path, "r", encoding="utf-8") as f:
             html_content = f.read()
 
         placeholders = {
-            "job_title":             job_data.get("job_title") or job_data.get("title") or "Government Job Update",
-            "organization":          job_data.get("organization") or job_data.get("source") or "Central/State Department",
-            "post_name":             job_data.get("post_name") or job_data.get("title") or "Not Specified",
-            "total_vacancies":       job_data.get("total_vacancies") or job_data.get("vacancies") or "Check Notification",
-            "salary":                job_data.get("salary") or "As per 7th Pay Commission",
-            "qualification":         job_data.get("qualification") or job_data.get("eligibility") or "Check notification PDF",
-            "age_limit":             job_data.get("age_limit") or "As per recruitment rules",
-            "application_fee":       job_data.get("application_fee") or job_data.get("form_fee") or "Check official website",
+            "job_title":               job_data.get("job_title") or job_data.get("title") or "Government Job Update",
+            "organization":            job_data.get("organization") or job_data.get("source") or "Central/State Department",
+            "post_name":               job_data.get("post_name") or job_data.get("title") or "Not Specified",
+            "total_vacancies":         job_data.get("total_vacancies") or "Check Notification",
+            "salary":                  job_data.get("salary") or "As per 7th Pay Commission",
+            "qualification":           job_data.get("qualification") or "Check notification PDF",
+            "age_limit":               job_data.get("age_limit") or "As per recruitment rules",
+            "application_fee":         job_data.get("application_fee") or "Check official website",
             "job_profile_description": job_data.get("job_profile_description") or "Poori jaankari official portal par dekhein.",
-            "start_date":            job_data.get("start_date") or "Available Now",
-            "last_date":             job_data.get("last_date") or "Click official link",
-            "exam_date":             job_data.get("exam_date") or "To be notified",
-            "official_apply_link":   job_data.get("official_apply_link") or job_data.get("url") or "#",
-            "source_url":            job_data.get("url") or "#"
+            "start_date":              job_data.get("start_date") or "Available Now",
+            "last_date":               job_data.get("last_date") or "Click official link",
+            "exam_date":               job_data.get("exam_date") or "To be notified",
+            "official_apply_link":     job_data.get("official_apply_link") or job_data.get("url") or "#",
+            "source_url":              job_data.get("url") or "#"
         }
 
         for key, value in placeholders.items():
             html_content = html_content.replace(f"{{{{ {key} }}}}", str(value))
             html_content = html_content.replace(f"{{{{{key}}}}}", str(value))
 
-        title_for_slug = placeholders["job_title"]
-        clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', title_for_slug).lower()
+        clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', placeholders["job_title"]).lower()
         file_name = clean_title.replace(" ", "-")[:80] + ".html"
 
-        # Save locally on Railway
         output_file_path = os.path.join(OUTPUT_JOBS_DIR, file_name)
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        # Auto commit to GitHub → Netlify will auto-publish
         commit_page_to_github(f"public_html/jobs/{file_name}", html_content)
 
-        full_redirect_url = f"{SITE_DOMAIN}/jobs/{file_name}"
+        full_url = f"{SITE_DOMAIN}/jobs/{file_name}"
         log.info(f"📂 HTML Page Saved: {output_file_path}")
-        log.info(f"🔗 Page URL: {full_redirect_url}")
-
-        return full_redirect_url
+        log.info(f"🔗 Page URL: {full_url}")
+        return full_url
 
     except Exception as e:
         log.error(f"❌ Error creating HTML page: {e}")
@@ -151,26 +142,23 @@ def check_and_post():
 
             for job in jobs:
                 if not db.exists(job["id"]):
-                    log.info(f"⚡ New Link Detected! ID: {job['id']} | Parsing Raw Title: {job['title'][:40]}")
+                    log.info(f"⚡ New Link Detected! ID: {job['id']} | Title: {job['title'][:40]}")
                     job["source"] = source
 
                     raw_title_lower = str(job.get("title", "")).lower()
                     raw_url_lower   = str(job.get("url", "")).lower()
 
-                    # Junk filter
-                    is_junk_portal = any(word in raw_url_lower or word in raw_title_lower for word in [
-                        "marksheet", "mark-sheet", "result_system", "archives",
-                        "written-result", "marksheet_system", "exam/marksheet"
-                    ])
-                    if is_junk_portal:
-                        log.warning(f"⚠️ Discarding junk link: {job['title'][:40]}")
+                    # 🚨 Junk filter
+                    is_junk = any(w in raw_title_lower or w in raw_url_lower for w in JUNK_WORDS)
+                    if is_junk:
+                        log.warning(f"⚠️ Junk link skipped: {job['title'][:40]}")
                         db.save(job)
                         continue
 
-                    # Gemini AI extraction
-                    log.info("🧠 Requesting Gemini AI to parse context details...")
-                    full_api_context = f"Title: {job['title']} | Direct URL: {job['url']} | Extra Meta: {job.get('raw_context', '')}"
-                    details = extract_job_details(full_api_context, job["url"])
+                    # 🧠 AI extraction
+                    log.info("🧠 Requesting AI to parse details...")
+                    context = f"Title: {job['title']} | URL: {job['url']}"
+                    details = extract_job_details(context, job["url"])
 
                     if details and isinstance(details, dict):
                         job.update(details)
@@ -181,55 +169,56 @@ def check_and_post():
                     parsed_title_lower = str(job.get("job_title", "")).lower()
 
                     # Menu/structural link filter
-                    is_menu_link = any(mk in raw_title_lower for mk in ["active examination", "forthcoming", "recruitment requisition"])
-                    has_real_vacancy_signal = any(vk in raw_title_lower or vk in parsed_title_lower for vk in ["posts", "vacancy", "advertisement", "notice", "recruitment"])
+                    is_menu = any(mk in raw_title_lower for mk in [
+                        "active examination", "forthcoming", "recruitment requisition"
+                    ])
+                    has_vacancy_signal = any(vk in raw_title_lower or vk in parsed_title_lower for vk in [
+                        "posts", "vacancy", "advertisement", "notice", "recruitment", "form", "result"
+                    ])
 
-                    if len(raw_title_lower) < 5 or (is_menu_link and not has_real_vacancy_signal):
-                        log.warning(f"⚠️ Skipping structural page link: {job['title'][:40]}")
+                    if len(raw_title_lower) < 5 or (is_menu and not has_vacancy_signal):
+                        log.warning(f"⚠️ Structural link skipped: {job['title'][:40]}")
                         db.save(job)
                         continue
 
-                    log.info(f"✅ Gemini Parsing Clear! Extracted Title: {job.get('job_title')}")
+                    log.info(f"✅ Extracted Title: {job.get('job_title')}")
 
-                    # Generate HTML page + commit to GitHub
-                    web_page_url = create_detailed_job_page(job)
-                    if web_page_url:
-                        job["detailed_page_url"] = web_page_url
+                    # HTML page generate + GitHub commit
+                    web_url = create_detailed_job_page(job)
+                    if web_url:
+                        job["detailed_page_url"] = web_url
 
                     db.save(job)
 
-                    # Telegram broadcast
-                    log.info("📤 Triggering Telegram Broadcast Payload...")
+                    # Telegram post
+                    log.info("📤 Posting to Telegram...")
                     success = poster.post(job)
                     if success:
-                        log.info(f"🎉 SUCCESS! Clean Alert posted on Telegram for {source}")
+                        log.info(f"🎉 Posted: {job.get('job_title')} [{source}]")
                     else:
-                        log.error(f"❌ FAILED! Telegram API rejected the post.")
+                        log.error(f"❌ Telegram post failed.")
 
-                    # 💤 Safe window delay
-                    log.info("🏁 Job transaction finished. Sleeping 30 seconds to safeguard tokens basket...")
                     time.sleep(30)
 
         except Exception as e:
-            log.error(f"💥 CRITICAL PIPELINE FAILURE in {source}: {e}")
+            log.error(f"💥 PIPELINE FAILURE in {source}: {e}")
 
-    log.info("🏁 All channels checked successfully. Entering sleep state.")
+    log.info("🏁 Cycle complete. Entering sleep state.")
 
 
 def main():
     if not BOT_TOKEN:
-        log.error("❌ CRITICAL: TELEGRAM_BOT_TOKEN missing!")
+        log.error("❌ TELEGRAM_BOT_TOKEN missing!")
         sys.exit(1)
     if not CHANNEL_ID:
-        log.error("❌ CRITICAL: TELEGRAM_CHANNEL_ID missing!")
+        log.error("❌ TELEGRAM_CHANNEL_ID missing!")
         sys.exit(1)
 
     log.info(f"🚀 Bot engine active — Broadcast Targets: {CHANNEL_ID}")
-
     check_and_post()
 
     while True:
-        log.info("Sleeping 30 minutes before next crawl window...")
+        log.info("Sleeping 30 minutes...")
         time.sleep(1800)
         check_and_post()
 
