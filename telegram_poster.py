@@ -1,68 +1,104 @@
 import requests
 import json
 import logging
-
 log = logging.getLogger(__name__)
 
 class TelegramPoster:
     def __init__(self, token, channel_id):
         self.token = token
         self.channel_id = channel_id
-        self.api_url = f"[https://api.telegram.org/bot](https://api.telegram.org/bot){token}"
+        self.api_url = f"https://api.telegram.org/bot{token}"
 
     def post(self, job_data):
         if not self.token or not self.channel_id:
-            log.error("❌ Telegram posting credentials missing in environment.")
+            log.error("❌ Telegram credentials missing!")
             return False
 
-        org = self.clean_html(job_data.get('organization', 'Government Department'))
-        title = self.clean_html(job_data.get('job_title', 'New Notification Alert'))
-        vacancies = self.clean_html(job_data.get('total_vacancies', 'Check Official Link'))
-        last_date = self.clean_html(job_data.get('last_date', 'Apply Soon'))
-        detailed_url = job_data.get('detailed_page_url', '[https://deshnaukri.netlify.app](https://deshnaukri.netlify.app)')
+        org      = self.clean(job_data.get('organization', 'Government Department'))
+        title    = self.clean(job_data.get('job_title') or job_data.get('title', 'New Recruitment Alert'))
+        post     = self.clean(job_data.get('post_name', ''))
+        vac      = self.clean(job_data.get('total_vacancies', 'Check Notification'))
+        qual     = self.clean(job_data.get('qualification', ''))
+        age      = self.clean(job_data.get('age_limit', ''))
+        salary   = self.clean(job_data.get('salary', ''))
+        fee      = self.clean(job_data.get('application_fee', ''))
+        selection= self.clean(job_data.get('selection_process', ''))
+        location = self.clean(job_data.get('location', ''))
+        last_date= self.clean(job_data.get('last_date', 'Apply Soon'))
+        desc     = self.clean(job_data.get('job_profile_description', ''))
+        apply_link = job_data.get('official_apply_link') or job_data.get('url', '#')
+        detail_url = job_data.get('detailed_page_url', 'https://deshnaukri.netlify.app')
 
-        caption = (
-            f"🎯 <b>New Job Recruitment Alert!</b>\n\n"
-            f"🏢 <b>Organization:</b> {org}\n"
-            f"💼 <b>Post Name:</b> {title}\n"
-            f"📊 <b>Vacancies:</b> {vacancies}\n"
-            f"⏳ <b>Last Date:</b> {last_date}\n\n"
-            f"📝 <b>Syllabus & Details:</b> <a href='{detailed_url}'>Click Here to Read Full Details</a>\n\n"
-            f"📢 <b>Join:</b> @DeshNaukri"
-        )
+        lines = [
+            f"🎯 <b>{org} — New Recruitment Alert!</b>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"📌 <b>Post:</b> {post or title}",
+            f"🔢 <b>Vacancies:</b> {vac}",
+        ]
+
+        if qual:
+            lines.append(f"🎓 <b>Eligibility:</b> {qual}")
+        if age:
+            lines.append(f"🎂 <b>Age Limit:</b> {age}")
+        if salary:
+            lines.append(f"💰 <b>Salary:</b> {salary}")
+        if fee:
+            lines.append(f"📝 <b>Form Fee:</b> {fee}")
+        if selection:
+            lines.append(f"📌 <b>Selection:</b> {selection}")
+        if location:
+            lines.append(f"📍 <b>Location:</b> {location}")
+
+        lines += [
+            f"📅 <b>Last Date:</b> <u>{last_date}</u>",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        ]
+
+        if desc:
+            lines += [f"ℹ️ <i>{desc}</i>", ""]
+
+        lines += [
+            "👇 <b>Important Links:</b>",
+            f"📖 <a href='{detail_url}'>Full Details — DeshNaukri</a> 🌐",
+            f"🚀 <a href='{apply_link}'>Apply Online / Official Notification</a>",
+            "",
+            "🔔 <i>Sarkari Naukri updates ke liye @DeshNaukri join karein!</i>",
+            "#SarkariNaukri #GovtJobs #JobAlert #DeshNaukri"
+        ]
+
+        caption = "\n".join(lines)
 
         inline_keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "🔗 View Details & Apply", "url": detailed_url}
-                ]
-            ]
+            "inline_keyboard": [[
+                {"text": "🌐 Full Details", "url": detail_url},
+                {"text": "✅ Apply Now", "url": apply_link}
+            ]]
         }
 
         try:
-            url = f"{self.api_url}/sendMessage"
-            payload = {
-                "chat_id": self.channel_id,
-                "text": caption,
-                "parse_mode": "HTML",
-                "reply_markup": json.dumps(inline_keyboard),
-                "disable_web_page_preview": False
-            }
-            
-            response = requests.post(url, json=payload, timeout=20)
-            res_json = response.json()
-            
-            if response.status_code == 200 and res_json.get("ok"):
+            resp = requests.post(
+                f"{self.api_url}/sendMessage",
+                json={
+                    "chat_id": self.channel_id,
+                    "text": caption,
+                    "parse_mode": "HTML",
+                    "reply_markup": json.dumps(inline_keyboard),
+                    "disable_web_page_preview": False
+                },
+                timeout=20
+            )
+            res = resp.json()
+            if resp.status_code == 200 and res.get("ok"):
                 return True
             else:
-                log.error(f"❌ Telegram API Rejected payload: {res_json}")
+                log.error(f"❌ Telegram rejected: {res}")
                 return False
-                
         except Exception as e:
-            log.error(f"💥 Failed sending payload to Telegram API: {e}")
+            log.error(f"💥 Telegram error: {e}")
             return False
 
-    def clean_html(self, text):
+    @staticmethod
+    def clean(text):
         if not text:
             return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
