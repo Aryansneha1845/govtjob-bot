@@ -22,7 +22,9 @@ KEYWORDS = [
 
 SKIP_WORDS = [
     "result", "admit card", "answer key", "syllabus",
-    "cut off", "merit list", "official website"
+    "cut off", "merit list", "official website",
+    "exam date", "exam calendar", "pmt", "schedule",
+    "document verification", "interview date"
 ]
 
 
