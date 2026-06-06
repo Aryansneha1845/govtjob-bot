@@ -44,11 +44,10 @@ SCRAPERS = {
 
 # 🚨 Junk words — in titles/URLs wale links skip ho jayenge
 JUNK_WORDS = [
-    "marksheet", "mark-sheet", "result_system", "archives",
-    "written-result", "marksheet_system", "exam/marksheet",
-    "official website", "board exams", "all board",
-    "sarkariresult", "rojgarresult", "admit card", "answer key",
-    "syllabus", "old paper", "previous paper"
+    "marksheet", "mark-sheet", "result_system",
+    "written-result", "marksheet_system",
+    "official website", "all board exams",
+    "admit card", "answer key"
 ]
 
 
