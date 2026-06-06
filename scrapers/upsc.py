@@ -1,62 +1,70 @@
 """
-UPSC scraper - directly scrapes upsc.gov.in via Jina AI
+UPSC scraper - sarkariresult.com se scrape karta hai, PDF links filter karta hai
 """
 import hashlib
 import requests
+import re
 from bs4 import BeautifulSoup
 
 SOURCE = "UPSC"
-JINA_PREFIX = "https://r.jina.ai/"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
 URLS = [
-    "https://upsc.gov.in/examinations/active-examinations",
-    "https://upsc.gov.in/releases/active",
+    "https://www.sarkariresult.com/latestjob/upsc/",
+    "https://rojgarresult.com/upsc/",
 ]
+
+KEYWORDS = [
+    "upsc", "ias", "ips", "cds", "nda", "recruitment", "vacancy",
+    "notification", "advertisement", "civil services", "capf",
+    "combined", "engineer", "geologist", "medical", "forest"
+]
+
+SKIP_WORDS = [
+    "result", "admit card", "answer key", "syllabus",
+    "cut off", "merit list", "official website"
+]
+
 
 def scrape_upsc() -> list:
     for url in URLS:
         try:
-            # Jina se fetch karo — government sites block nahi hoti
-            resp = requests.get(
-                f"{JINA_PREFIX}{url}",
-                headers={"Accept": "text/plain", "X-No-Cache": "true"},
-                timeout=20
-            )
-            if resp.status_code == 200:
-                jobs = _parse_text(resp.text, url)
-                if jobs:
-                    return jobs
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            jobs = _parse(soup, url)
+            if jobs:
+                return jobs
         except Exception:
             continue
     return []
 
 
-def _parse_text(text: str, base_url: str) -> list:
+def _parse(soup, base_url) -> list:
     jobs = []
-    keywords = [
-        "recruitment", "vacancy", "notification", "advertisement",
-        "exam", "civil services", "cds", "nda", "capf", "ifs",
-        "combined", "engineer", "geologist", "medical"
-    ]
-
     seen = set()
-    for line in text.split("\n"):
-        line = line.strip()
-        if len(line) < 15:
-            continue
-        if not any(k in line.lower() for k in keywords):
+
+    for a in soup.find_all("a", href=True):
+        title = a.get_text(strip=True)
+        href = a.get("href", "")
+
+        if not title or len(title) < 10:
             continue
 
-        # URL extract karo line se
-        import re
-        urls_found = re.findall(r'https?://[^\s\)]+', line)
-        href = urls_found[0] if urls_found else base_url
-
-        # Clean title
-        title = re.sub(r'https?://\S+', '', line).strip()
-        title = re.sub(r'[\[\]\(\)]', '', title).strip()
-        if len(title) < 10:
+        # Skip words filter
+        if any(s in title.lower() for s in SKIP_WORDS):
             continue
+
+        # Must have keyword
+        if not any(k in title.lower() for k in KEYWORDS):
+            continue
+
+        # PDF links skip karo
+        if href.lower().endswith(".pdf"):
+            continue
+
+        if href and not href.startswith("http"):
+            href = "https://www.sarkariresult.com" + href
 
         if title in seen:
             continue
@@ -72,4 +80,4 @@ def _parse_text(text: str, base_url: str) -> list:
             "posts": "",
         })
 
-    return jobs[:10]
+    return jobs[:8]
