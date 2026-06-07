@@ -33,6 +33,7 @@ from database import Database
 from scrapers.ssc import scrape_ssc
 from scrapers.upsc import scrape_upsc
 from scrapers.rrb import scrape_rrb
+from scrapers.bpsc import scrape_bpsc
 from telegram_poster import TelegramPoster
 from gemini_extractor import extract_job_details
 
@@ -40,6 +41,7 @@ SCRAPERS = {
     "SSC":  scrape_ssc,
     "UPSC": scrape_upsc,
     "RRB":  scrape_rrb,
+    "BPSC": scrape_bpsc,
 }
 
 JUNK_WORDS = [
@@ -115,7 +117,6 @@ def create_detailed_job_page(job_data):
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        # GitHub Pages ke liye jobs/ folder mein commit karo
         commit_page_to_github(f"jobs/{file_name}", html_content)
 
         full_url = f"{SITE_DOMAIN}/jobs/{file_name}"
@@ -147,12 +148,14 @@ def check_and_post():
                     raw_title_lower = str(job.get("title", "")).lower()
                     raw_url_lower   = str(job.get("url", "")).lower()
 
+                    # Junk filter
                     is_junk = any(w in raw_title_lower or w in raw_url_lower for w in JUNK_WORDS)
                     if is_junk:
                         log.warning(f"⚠️ Junk link skipped: {job['title'][:40]}")
                         db.save(job)
                         continue
 
+                    # AI extraction
                     log.info("🧠 Requesting AI to parse details...")
                     context = f"Title: {job['title']} | URL: {job['url']}"
                     details = extract_job_details(context, job["url"])
@@ -164,6 +167,12 @@ def check_and_post():
                         job["job_title"] = job.get("title", "Government Job Update")
 
                     parsed_title_lower = str(job.get("job_title", "")).lower()
+
+                    # State tag add karo
+                    if job.get("location") == "Bihar" or source == "BPSC":
+                        job["state_tag"] = "📍 BIHAR GOVT JOB"
+                    else:
+                        job["state_tag"] = "🌐 CENTRAL GOVT JOB"
 
                     is_menu = any(mk in raw_title_lower for mk in [
                         "active examination", "forthcoming", "recruitment requisition"
