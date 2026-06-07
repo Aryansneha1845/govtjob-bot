@@ -14,22 +14,25 @@ class TelegramPoster:
             log.error("❌ Telegram credentials missing!")
             return False
 
-        org      = self.clean(job_data.get('organization', 'Government Department'))
-        title    = self.clean(job_data.get('job_title') or job_data.get('title', 'New Recruitment Alert'))
-        post     = self.clean(job_data.get('post_name', ''))
-        vac      = self.clean(job_data.get('total_vacancies', 'Check Notification'))
-        qual     = self.clean(job_data.get('qualification', ''))
-        age      = self.clean(job_data.get('age_limit', ''))
-        salary   = self.clean(job_data.get('salary', ''))
-        fee      = self.clean(job_data.get('application_fee', ''))
-        selection= self.clean(job_data.get('selection_process', ''))
-        location = self.clean(job_data.get('location', ''))
-        last_date= self.clean(job_data.get('last_date', 'Apply Soon'))
-        desc     = self.clean(job_data.get('job_profile_description', ''))
+        org       = self.clean(job_data.get('organization', 'Government Department'))
+        title     = self.clean(job_data.get('job_title') or job_data.get('title', 'New Recruitment Alert'))
+        post      = self.clean(job_data.get('post_name', ''))
+        vac       = self.clean(job_data.get('total_vacancies', 'Check Notification'))
+        qual      = self.clean(job_data.get('qualification', ''))
+        age       = self.clean(job_data.get('age_limit', ''))
+        salary    = self.clean(job_data.get('salary', ''))
+        fee       = self.clean(job_data.get('application_fee', ''))
+        selection = self.clean(job_data.get('selection_process', ''))
+        location  = self.clean(job_data.get('location', ''))
+        last_date = self.clean(job_data.get('last_date', 'Apply Soon'))
+        desc      = self.clean(job_data.get('job_profile_description', ''))
+        state_tag = job_data.get('state_tag', '🌐 CENTRAL GOVT JOB')
         apply_link = job_data.get('official_apply_link') or job_data.get('url', '#')
-        detail_url = job_data.get('detailed_page_url', 'https://deshnaukri.netlify.app')
+        detail_url = job_data.get('detailed_page_url', 'https://aryansneha1845.github.io/govtjob-bot')
+        pdf_url    = job_data.get('pdf_url', '')
 
         lines = [
+            f"<b>{state_tag}</b>",
             f"🎯 <b>{org} — New Recruitment Alert!</b>",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             f"📌 <b>Post:</b> {post or title}",
@@ -68,12 +71,15 @@ class TelegramPoster:
 
         caption = "\n".join(lines)
 
-        inline_keyboard = {
-            "inline_keyboard": [[
-                {"text": "🌐 Full Details", "url": detail_url},
-                {"text": "✅ Apply Now", "url": apply_link}
-            ]]
-        }
+        # Inline buttons — PDF button bhi add karo agar available ho
+        buttons = [
+            {"text": "🌐 Full Details", "url": detail_url},
+            {"text": "✅ Apply Now", "url": apply_link}
+        ]
+        if pdf_url:
+            buttons.append({"text": "📥 Download PDF", "url": pdf_url})
+
+        inline_keyboard = {"inline_keyboard": [buttons]}
 
         try:
             resp = requests.post(
@@ -102,3 +108,4 @@ class TelegramPoster:
         if not text:
             return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
