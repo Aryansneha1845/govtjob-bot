@@ -1,0 +1,9 @@
+{
+  "providers": ["python"],
+  "python": {
+    "version": "3.11"
+  },
+  "deploy": {
+    "startCommand": "python bot.py"
+  }
+}
