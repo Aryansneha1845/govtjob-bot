@@ -6,7 +6,7 @@ import hashlib
 import re
 
 SOURCE = "SarkariResult"
-CHANNEL = "SarkariResult"
+CHANNEL = "sarkariresulinfo"
 
 KEYWORDS = [
     "recruitment", "vacancy", "notification", "advertisement",
