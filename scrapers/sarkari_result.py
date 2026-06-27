@@ -25,9 +25,9 @@ def scrape_sarkari_result(client) -> list:
     seen = set()
 
     try:
-        # Synchronous approach — no new event loop
-        messages = client.get_messages(CHANNEL, limit=20)
-
+        # Pehle channel join karo/resolve karo
+        entity = client.get_entity(f"https://t.me/{CHANNEL}")
+        messages = client.get_messages(entity, limit=20)
         for message in messages:
             if not message.text:
                 continue
