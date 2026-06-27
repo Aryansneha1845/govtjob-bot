@@ -56,9 +56,10 @@ def get_tg_client():
         return tg_client
     try:
         from telethon.sync import TelegramClient
-        session_path = os.path.join(BASE_DIR, "data", "session")
-        tg_client = TelegramClient(session_path, TG_API_ID, TG_API_HASH)
-        tg_client.start(bot_token=BOT_TOKEN)
+        from telethon.sessions import StringSession
+        session_str = os.getenv("TELEGRAM_SESSION", "")
+        tg_client = TelegramClient(StringSession(session_str), TG_API_ID, TG_API_HASH)
+        tg_client.connect()
         log.info("✅ Telethon client started!")
         return tg_client
     except Exception as e:
