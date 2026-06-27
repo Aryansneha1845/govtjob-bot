@@ -28,21 +28,17 @@ CHANNEL_ID   = os.getenv("TELEGRAM_CHANNEL_ID", "")
 SITE_DOMAIN  = os.getenv("SITE_DOMAIN", "https://aryansneha1845.github.io/govtjob-bot").rstrip("/")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO  = os.getenv("GITHUB_REPO", "")
+TG_API_ID    = int(os.getenv("TELEGRAM_API_ID", "0"))
+TG_API_HASH  = os.getenv("TELEGRAM_API_HASH", "")
 
 from database import Database
 from scrapers.ssc import scrape_ssc
 from scrapers.upsc import scrape_upsc
 from scrapers.rrb import scrape_rrb
 from scrapers.bpsc import scrape_bpsc
+from scrapers.sarkari_result import scrape_sarkari_result
 from telegram_poster import TelegramPoster
 from gemini_extractor import extract_job_details
-
-SCRAPERS = {
-    "SSC":  scrape_ssc,
-    "UPSC": scrape_upsc,
-    "RRB":  scrape_rrb,
-    "BPSC": scrape_bpsc,
-}
 
 JUNK_WORDS = [
     "marksheet", "mark-sheet", "result_system",
@@ -50,6 +46,24 @@ JUNK_WORDS = [
     "official website", "all board exams",
     "admit card", "answer key"
 ]
+
+# Telethon client — global
+tg_client = None
+
+def get_tg_client():
+    global tg_client
+    if tg_client:
+        return tg_client
+    try:
+        from telethon.sync import TelegramClient
+        session_path = os.path.join(BASE_DIR, "data", "session")
+        tg_client = TelegramClient(session_path, TG_API_ID, TG_API_HASH)
+        tg_client.start(bot_token=BOT_TOKEN)
+        log.info("✅ Telethon client started!")
+        return tg_client
+    except Exception as e:
+        log.error(f"❌ Telethon client failed: {e}")
+        return None
 
 
 def commit_page_to_github(file_path: str, html_content: str):
@@ -129,82 +143,99 @@ def create_detailed_job_page(job_data):
         return None
 
 
+def process_jobs(jobs, source, db, poster):
+    for job in jobs:
+        if not db.exists(job["id"]):
+            log.info(f"⚡ New: {job['title'][:40]} [{source}]")
+            job["source"] = source
+
+            raw_title_lower = str(job.get("title", "")).lower()
+            raw_url_lower   = str(job.get("url", "")).lower()
+
+            is_junk = any(w in raw_title_lower or w in raw_url_lower for w in JUNK_WORDS)
+            if is_junk:
+                log.warning(f"⚠️ Junk skipped: {job['title'][:40]}")
+                db.save(job)
+                continue
+
+            log.info("🧠 AI extraction...")
+            context = f"Title: {job['title']} | URL: {job['url']}"
+            details = extract_job_details(context, job["url"])
+
+            if details and isinstance(details, dict):
+                job.update(details)
+
+            if not job.get("job_title"):
+                job["job_title"] = job.get("title", "Government Job Update")
+
+            parsed_title_lower = str(job.get("job_title", "")).lower()
+
+            if job.get("location") == "Bihar" or source == "BPSC":
+                job["state_tag"] = "📍 BIHAR GOVT JOB"
+            else:
+                job["state_tag"] = "🌐 CENTRAL GOVT JOB"
+
+            is_menu = any(mk in raw_title_lower for mk in [
+                "active examination", "forthcoming", "recruitment requisition"
+            ])
+            has_vacancy_signal = any(vk in raw_title_lower or vk in parsed_title_lower for vk in [
+                "posts", "vacancy", "advertisement", "notice", "recruitment", "form", "result"
+            ])
+
+            if len(raw_title_lower) < 5 or (is_menu and not has_vacancy_signal):
+                log.warning(f"⚠️ Structural link skipped: {job['title'][:40]}")
+                db.save(job)
+                continue
+
+            web_url = create_detailed_job_page(job)
+            if web_url:
+                job["detailed_page_url"] = web_url
+
+            db.save(job)
+
+            log.info("📤 Posting to Telegram...")
+            success = poster.post(job)
+            if success:
+                log.info(f"🎉 Posted: {job.get('job_title')} [{source}]")
+            else:
+                log.error(f"❌ Telegram post failed.")
+
+            time.sleep(30)
+
+
 def check_and_post():
     db     = Database()
     poster = TelegramPoster(BOT_TOKEN, CHANNEL_ID)
     log.info("🔍 Starting Scraping Engine Cycle...")
 
+    # Normal scrapers
+    SCRAPERS = {
+        "SSC":  scrape_ssc,
+        "UPSC": scrape_upsc,
+        "RRB":  scrape_rrb,
+        "BPSC": scrape_bpsc,
+    }
+
     for source, scraper_fn in SCRAPERS.items():
         try:
             log.info(f"📡 Requesting live data from {source}...")
             jobs = scraper_fn()
-            log.info(f"📊 {source} Response: Found {len(jobs)} total link(s) on target page.")
-
-            for job in jobs:
-                if not db.exists(job["id"]):
-                    log.info(f"⚡ New Link Detected! ID: {job['id']} | Title: {job['title'][:40]}")
-                    job["source"] = source
-
-                    raw_title_lower = str(job.get("title", "")).lower()
-                    raw_url_lower   = str(job.get("url", "")).lower()
-
-                    # Junk filter
-                    is_junk = any(w in raw_title_lower or w in raw_url_lower for w in JUNK_WORDS)
-                    if is_junk:
-                        log.warning(f"⚠️ Junk link skipped: {job['title'][:40]}")
-                        db.save(job)
-                        continue
-
-                    # AI extraction
-                    log.info("🧠 Requesting AI to parse details...")
-                    context = f"Title: {job['title']} | URL: {job['url']}"
-                    details = extract_job_details(context, job["url"])
-
-                    if details and isinstance(details, dict):
-                        job.update(details)
-
-                    if not job.get("job_title"):
-                        job["job_title"] = job.get("title", "Government Job Update")
-
-                    parsed_title_lower = str(job.get("job_title", "")).lower()
-
-                    # State tag add karo
-                    if job.get("location") == "Bihar" or source == "BPSC":
-                        job["state_tag"] = "📍 BIHAR GOVT JOB"
-                    else:
-                        job["state_tag"] = "🌐 CENTRAL GOVT JOB"
-
-                    is_menu = any(mk in raw_title_lower for mk in [
-                        "active examination", "forthcoming", "recruitment requisition"
-                    ])
-                    has_vacancy_signal = any(vk in raw_title_lower or vk in parsed_title_lower for vk in [
-                        "posts", "vacancy", "advertisement", "notice", "recruitment", "form", "result"
-                    ])
-
-                    if len(raw_title_lower) < 5 or (is_menu and not has_vacancy_signal):
-                        log.warning(f"⚠️ Structural link skipped: {job['title'][:40]}")
-                        db.save(job)
-                        continue
-
-                    log.info(f"✅ Extracted Title: {job.get('job_title')}")
-
-                    web_url = create_detailed_job_page(job)
-                    if web_url:
-                        job["detailed_page_url"] = web_url
-
-                    db.save(job)
-
-                    log.info("📤 Posting to Telegram...")
-                    success = poster.post(job)
-                    if success:
-                        log.info(f"🎉 Posted: {job.get('job_title')} [{source}]")
-                    else:
-                        log.error(f"❌ Telegram post failed.")
-
-                    time.sleep(30)
-
+            log.info(f"📊 {source}: Found {len(jobs)} link(s).")
+            process_jobs(jobs, source, db, poster)
         except Exception as e:
             log.error(f"💥 PIPELINE FAILURE in {source}: {e}")
+
+    # SarkariResult Telegram channel
+    try:
+        if TG_API_ID and TG_API_HASH:
+            log.info("📡 Requesting live data from SarkariResult TG...")
+            client = get_tg_client()
+            if client:
+                jobs = scrape_sarkari_result(client)
+                log.info(f"📊 SarkariResult: Found {len(jobs)} link(s).")
+                process_jobs(jobs, "SarkariResult", db, poster)
+    except Exception as e:
+        log.error(f"💥 SarkariResult failed: {e}")
 
     log.info("🏁 Cycle complete. Entering sleep state.")
 
