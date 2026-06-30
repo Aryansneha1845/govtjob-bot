@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import datetime
 import logging
 import re
 import base64
@@ -39,6 +40,7 @@ from scrapers.bpsc import scrape_bpsc
 from scrapers.sarkari_result import scrape_sarkari_result
 from telegram_poster import TelegramPoster
 from gemini_extractor import extract_job_details
+from motivational import generate_motivational_story, generate_job_stats
 
 JUNK_WORDS = [
     "marksheet", "mark-sheet", "result_system",
@@ -47,7 +49,6 @@ JUNK_WORDS = [
     "admit card", "answer key"
 ]
 
-# Telethon client — global
 tg_client = None
 
 def get_tg_client():
@@ -145,6 +146,7 @@ def create_detailed_job_page(job_data):
 
 
 def process_jobs(jobs, source, db, poster):
+    posted_count = 0
     for job in jobs:
         if not db.exists(job["id"]):
             log.info(f"⚡ New: {job['title'][:40]} [{source}]")
@@ -198,10 +200,46 @@ def process_jobs(jobs, source, db, poster):
             success = poster.post(job)
             if success:
                 log.info(f"🎉 Posted: {job.get('job_title')} [{source}]")
+                posted_count += 1
             else:
                 log.error(f"❌ Telegram post failed.")
 
             time.sleep(30)
+
+    return posted_count
+
+
+def post_filler_content(poster):
+    """Jab koi nayi job nahi mili, motivational content ya stats post karo."""
+    try:
+        hour = datetime.datetime.now().hour
+        import random
+
+        # Raat ke time stories, din mein stats
+        if hour >= 21 or hour < 6:
+            content = generate_motivational_story()
+            log.info("🌙 Posting night motivational story...")
+        else:
+            content = generate_job_stats()
+            log.info("📊 Posting job statistics...")
+
+        resp = requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            json={
+                "chat_id": CHANNEL_ID,
+                "text": content,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            },
+            timeout=15
+        )
+        if resp.ok:
+            log.info("✅ Filler content posted!")
+        else:
+            log.error(f"❌ Filler content failed: {resp.text}")
+
+    except Exception as e:
+        log.error(f"❌ Filler content error: {e}")
 
 
 def check_and_post():
@@ -209,7 +247,8 @@ def check_and_post():
     poster = TelegramPoster(BOT_TOKEN, CHANNEL_ID)
     log.info("🔍 Starting Scraping Engine Cycle...")
 
-    # Normal scrapers
+    total_posted = 0
+
     SCRAPERS = {
         "SSC":  scrape_ssc,
         "UPSC": scrape_upsc,
@@ -222,11 +261,10 @@ def check_and_post():
             log.info(f"📡 Requesting live data from {source}...")
             jobs = scraper_fn()
             log.info(f"📊 {source}: Found {len(jobs)} link(s).")
-            process_jobs(jobs, source, db, poster)
+            total_posted += process_jobs(jobs, source, db, poster)
         except Exception as e:
             log.error(f"💥 PIPELINE FAILURE in {source}: {e}")
 
-    # SarkariResult Telegram channel
     try:
         if TG_API_ID and TG_API_HASH:
             log.info("📡 Requesting live data from SarkariResult TG...")
@@ -234,9 +272,14 @@ def check_and_post():
             if client:
                 jobs = scrape_sarkari_result(client)
                 log.info(f"📊 SarkariResult: Found {len(jobs)} link(s).")
-                process_jobs(jobs, "SarkariResult", db, poster)
+                total_posted += process_jobs(jobs, "SarkariResult", db, poster)
     except Exception as e:
         log.error(f"💥 SarkariResult failed: {e}")
+
+    # Agar koi nayi job post nahi hui, filler content daalo
+    if total_posted == 0:
+        log.info("📭 No new jobs found this cycle — posting filler content")
+        post_filler_content(poster)
 
     log.info("🏁 Cycle complete. Entering sleep state.")
 
