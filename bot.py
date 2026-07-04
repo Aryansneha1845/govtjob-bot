@@ -36,6 +36,10 @@ from scrapers.ssc import scrape_ssc
 from scrapers.upsc import scrape_upsc
 from scrapers.rrb import scrape_rrb
 from scrapers.bpsc import scrape_bpsc
+from scrapers.bank import scrape_bank
+from scrapers.defence import scrape_defence
+from scrapers.police import scrape_police
+from scrapers.nhm import scrape_nhm
 from scrapers.sarkari_result import scrape_sarkari_result
 from telegram_poster import TelegramPoster
 from gemini_extractor import extract_job_details
@@ -46,6 +50,17 @@ JUNK_WORDS = [
     "official website", "all board exams",
     "admit card", "answer key"
 ]
+
+SCRAPERS = {
+    "SSC":     scrape_ssc,
+    "UPSC":    scrape_upsc,
+    "RRB":     scrape_rrb,
+    "BPSC":    scrape_bpsc,
+    "BANK":    scrape_bank,
+    "DEFENCE": scrape_defence,
+    "POLICE":  scrape_police,
+    "NHM":     scrape_nhm,
+}
 
 tg_client = None
 
@@ -170,8 +185,17 @@ def process_jobs(jobs, source, db, poster):
 
             parsed_title_lower = str(job.get("job_title", "")).lower()
 
+            # State tag
             if job.get("location") == "Bihar" or source == "BPSC":
                 job["state_tag"] = "📍 BIHAR GOVT JOB"
+            elif source == "BANK":
+                job["state_tag"] = "🏦 BANK GOVT JOB"
+            elif source == "DEFENCE":
+                job["state_tag"] = "⚔️ DEFENCE GOVT JOB"
+            elif source == "POLICE":
+                job["state_tag"] = "👮 POLICE GOVT JOB"
+            elif source == "NHM":
+                job["state_tag"] = "🏥 HEALTH GOVT JOB"
             else:
                 job["state_tag"] = "🌐 CENTRAL GOVT JOB"
 
@@ -207,13 +231,6 @@ def check_and_post():
     db     = Database()
     poster = TelegramPoster(BOT_TOKEN, CHANNEL_ID)
     log.info("🔍 Starting Scraping Engine Cycle...")
-
-    SCRAPERS = {
-        "SSC":  scrape_ssc,
-        "UPSC": scrape_upsc,
-        "RRB":  scrape_rrb,
-        "BPSC": scrape_bpsc,
-    }
 
     for source, scraper_fn in SCRAPERS.items():
         try:
