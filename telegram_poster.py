@@ -1,7 +1,10 @@
+import os
 import requests
 import json
 import logging
 log = logging.getLogger(__name__)
+
+AMAZON_AFFILIATE = os.getenv("AMAZON_AFFILIATE", "https://www.amazon.in/s?k=sarkari+exam+books&tag=deshnaukri-21")
 
 class TelegramPoster:
     def __init__(self, token, channel_id):
@@ -65,13 +68,16 @@ class TelegramPoster:
             f"📖 <a href='{detail_url}'>Full Details — DeshNaukri</a> 🌐",
             f"🚀 <a href='{apply_link}'>Apply Online / Official Notification</a>",
             "",
+            "📚 <i>Exam ki taiyari ke liye best books:</i>",
+            f"<a href='{AMAZON_AFFILIATE}'>📦 SSC/UPSC Study Material — Amazon</a>",
+            "",
             "🔔 <i>Sarkari Naukri updates ke liye @DeshNaukri join karein!</i>",
             "#SarkariNaukri #GovtJobs #JobAlert #DeshNaukri"
         ]
 
         caption = "\n".join(lines)
 
-        # Inline buttons — PDF button bhi add karo agar available ho
+        # Inline buttons
         buttons = [
             {"text": "🌐 Full Details", "url": detail_url},
             {"text": "✅ Apply Now", "url": apply_link}
@@ -79,7 +85,12 @@ class TelegramPoster:
         if pdf_url:
             buttons.append({"text": "📥 Download PDF", "url": pdf_url})
 
-        inline_keyboard = {"inline_keyboard": [buttons]}
+        # Amazon button bhi add karo
+        amazon_buttons = [
+            {"text": "📚 Study Books — Amazon", "url": AMAZON_AFFILIATE}
+        ]
+
+        inline_keyboard = {"inline_keyboard": [buttons, amazon_buttons]}
 
         try:
             resp = requests.post(
@@ -89,7 +100,7 @@ class TelegramPoster:
                     "text": caption,
                     "parse_mode": "HTML",
                     "reply_markup": json.dumps(inline_keyboard),
-                    "disable_web_page_preview": False
+                    "disable_web_page_preview": True
                 },
                 timeout=20
             )
@@ -108,4 +119,3 @@ class TelegramPoster:
         if not text:
             return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        
