@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aryansneha1845.github.io/govtjob-bot/sitemap.xml
